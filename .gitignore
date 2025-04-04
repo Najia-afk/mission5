@@ -1,0 +1,43 @@
+# Data and Cache
+/dataset/*
+/src/cache/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+*.pyc
+
+# Virtual Environment
+/mission5_venv/
+venv/
+env/
+.env
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# IDE - VS Code
+.vscode/
+*.code-workspace
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Logs and databases
+*.log
+logs/
+*.sqlite
+*.db
