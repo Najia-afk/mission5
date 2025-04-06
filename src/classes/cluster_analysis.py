@@ -188,3 +188,106 @@ class ClusteringAnalysis:
         
         fig.update_layout(height=800, width=1200, showlegend=True)
         return fig
+    
+    def analyze_clusters_business(self, labels: np.ndarray) -> Dict:
+        """Analyze cluster characteristics in business terms."""
+        # Get cluster means for original features
+        cluster_means = pd.DataFrame(
+            self.df[self.features], 
+            columns=self.features
+        )
+        cluster_means['Cluster'] = labels
+        profile = cluster_means.groupby('Cluster').mean()
+        
+        # Create cluster descriptions
+        cluster_profiles = {}
+        for cluster in profile.index:
+            row = profile.loc[cluster]
+            
+            # Interpret RFM metrics
+            recency = "Recent" if row['recency_days'] < 30 else "Inactive"
+            frequency = "Frequent" if row['frequency'] > 2 else "Occasional"
+            spending = "High-value" if row['monetary'] > profile['monetary'].mean() else "Standard-value"
+            
+            # Interpret satisfaction
+            satisfaction = "Satisfied" if row['avg_review_score'] >= 4 else "Needs Attention"
+            
+            # Create cluster profile
+            cluster_profiles[f"Cluster {cluster}"] = {
+                "Size": len(cluster_means[cluster_means['Cluster'] == cluster]),
+                "Type": f"{frequency} {spending} Customers",
+                "Activity": recency,
+                "Satisfaction": satisfaction,
+                "Key Metrics": {
+                    "Avg Order Value": f"${row['monetary']/row['frequency']:.0f}",
+                    "Days Since Last Purchase": f"{row['recency_days']:.0f}",
+                    "Total Orders": f"{row['frequency']:.1f}",
+                    "Review Score": f"{row['avg_review_score']:.1f}/5",
+                    "Delivery Time (days)": f"{row['avg_delivery_time']:.1f}"
+                }
+            }
+        
+        return {
+            'cluster_profiles': cluster_profiles,
+            'cluster_means': profile,
+            'cluster_sizes': pd.Series(labels).value_counts().to_dict()
+        }
+
+    def plot_cluster_analysis_business(self, analysis_results: Dict) -> go.Figure:
+        """Plot business-friendly cluster profiles."""
+        profiles = analysis_results['cluster_profiles']
+        
+        # Create subplot figure
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                'Customer Segments Distribution',
+                'Average Order Value by Segment',
+                'Customer Satisfaction by Segment',
+                'Customer Activity Patterns'
+            )
+        )
+        
+        # Plot cluster sizes
+        sizes = [p['Size'] for p in profiles.values()]
+        labels = [f"{k}: {p['Type']}" for k, p in profiles.items()]
+        
+        fig.add_trace(
+            go.Pie(labels=labels, values=sizes, name='Segment Sizes'),
+            row=1, col=1
+        )
+        
+        # Plot average order values
+        order_values = [float(p['Key Metrics']['Avg Order Value'].replace('$','')) 
+                    for p in profiles.values()]
+        
+        fig.add_trace(
+            go.Bar(x=list(profiles.keys()), y=order_values, name='Avg Order Value'),
+            row=1, col=2
+        )
+        
+        # Plot satisfaction scores
+        satisfaction = [float(p['Key Metrics']['Review Score'].split('/')[0]) 
+                    for p in profiles.values()]
+        
+        fig.add_trace(
+            go.Bar(x=list(profiles.keys()), y=satisfaction, name='Satisfaction'),
+            row=2, col=1
+        )
+        
+        # Plot recency
+        recency = [float(p['Key Metrics']['Days Since Last Purchase']) 
+                for p in profiles.values()]
+        
+        fig.add_trace(
+            go.Bar(x=list(profiles.keys()), y=recency, name='Days Since Purchase'),
+            row=2, col=2
+        )
+        
+        fig.update_layout(
+            height=800,
+            title_text="Customer Segment Analysis",
+            showlegend=False
+        )
+        
+        return fig
