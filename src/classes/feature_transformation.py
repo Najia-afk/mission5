@@ -11,9 +11,7 @@ class FeatureTransformation:
         date_col = df['order_purchase_timestamp'].copy()
         
         # List of numerical columns to scale
-        num_cols = ['recency_days', 'frequency', 'monetary', 
-                   'avg_review_score', 'review_count', 
-                   'avg_delivery_time']
+        num_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
         
         # Handle missing values and scale
         df[num_cols] = self.imputer.fit_transform(df[num_cols])

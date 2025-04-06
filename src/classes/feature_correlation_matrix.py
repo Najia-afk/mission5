@@ -6,11 +6,7 @@ import pandas as pd
 class CorrelationAnalysis:
     def __init__(self, df: pd.DataFrame):
         self.df = df
-        self.numerical_features = [
-            'recency_days', 'frequency', 'monetary',
-            'avg_review_score', 'review_count', 'negative_reviews',
-            'unique_categories', 'avg_delivery_time', 'unique_sellers'
-        ]
+        self.numerical_features = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
         self.corr_matrix = None
     
     def compute_correlation(self) -> np.ndarray:
@@ -28,21 +24,20 @@ class CorrelationAnalysis:
     def plot_correlation_matrix(self) -> go.Figure:
         """Generate correlation matrix heatmap showing only lower triangle."""
         if self.corr_matrix is None:
-            self.get_lower_triangle()
-            
-        # Create mask for upper triangle (including diagonal)
-        mask = np.triu(np.ones_like(self.corr_matrix), k=1)  # k=1 excludes diagonal
-        # Apply inverse mask to correlation matrix (keep lower triangle)
-        masked_corr = np.ma.masked_array(self.corr_matrix, mask)
+            self.compute_correlation()
         
+        # Create mask for upper triangle (including diagonal)
+        mask = np.triu(np.ones_like(self.corr_matrix, dtype=bool))  # Upper triangle mask
+        masked_corr = self.corr_matrix.mask(mask)  # Mask upper triangle
+
         fig = go.Figure(data=go.Heatmap(
-            z=masked_corr,
+            z=masked_corr.values,
             x=self.numerical_features,
             y=self.numerical_features,
             colorscale='RdBu',
             zmin=-1,
             zmax=1,
-            text=np.round(masked_corr, 2),
+            text=np.round(masked_corr.values, 2),
             texttemplate='%{text}',
             textfont={"size": 10},
             hoverongaps=False,
@@ -52,7 +47,9 @@ class CorrelationAnalysis:
         fig.update_layout(
             title='Feature Correlation Analysis - Lower Triangle',
             xaxis={'tickangle': 45},
-            yaxis={'tickangle': 0}
+            yaxis={'tickangle': 0},
+            xaxis_title="Features",
+            yaxis_title="Features"
         )
         
         return fig

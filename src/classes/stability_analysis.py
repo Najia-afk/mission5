@@ -12,10 +12,7 @@ class StabilityAnalysis:
         self.df[date_column] = pd.to_datetime(self.df[date_column])  # Convert to datetime
         self.model = clustering_model
         self.date_column = date_column
-        self.numeric_features = [
-            'recency_days', 'frequency', 'monetary',
-            'avg_review_score', 'review_count', 'avg_delivery_time'
-        ]
+        self.numeric_features = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
         self.periods = None
         self.stability_scores = None
 
