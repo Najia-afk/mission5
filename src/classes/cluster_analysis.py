@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing import Dict, List, Tuple
 from tqdm import tqdm
+import plotly.express as px
+from src.classes.feature_transformation import FeatureTransformation
 
 class ClusteringAnalysis:
     def __init__(self, df: pd.DataFrame):
@@ -199,17 +201,19 @@ class ClusteringAnalysis:
         cluster_means['Cluster'] = labels
         profile = cluster_means.groupby('Cluster').mean()
         
+        # Use the same FeatureTransformation instance
+        ft = FeatureTransformation()  # This will return the existing instance with fitted scalers
+        profile_original = ft.inverse_transform_features(profile)
+        
         # Create cluster descriptions
         cluster_profiles = {}
-        for cluster in profile.index:
-            row = profile.loc[cluster]
+        for cluster in profile_original.index:
+            row = profile_original.loc[cluster]
             
-            # Interpret RFM metrics
+            # Use original scale values for thresholds
             recency = "Recent" if row['recency_days'] < 30 else "Inactive"
             frequency = "Frequent" if row['frequency'] > 2 else "Occasional"
-            spending = "High-value" if row['monetary'] > profile['monetary'].mean() else "Standard-value"
-            
-            # Interpret satisfaction
+            spending = "High-value" if row['monetary'] > profile_original['monetary'].mean() else "Standard-value"
             satisfaction = "Satisfied" if row['avg_review_score'] >= 4 else "Needs Attention"
             
             # Create cluster profile
@@ -219,7 +223,7 @@ class ClusteringAnalysis:
                 "Activity": recency,
                 "Satisfaction": satisfaction,
                 "Key Metrics": {
-                    "Avg Order Value": f"${row['monetary']/row['frequency']:.0f}",
+                    "Avg Order Value": f"${row['monetary']/max(1, row['frequency']):.0f}",  # Prevent division by zero
                     "Days Since Last Purchase": f"{row['recency_days']:.0f}",
                     "Total Orders": f"{row['frequency']:.1f}",
                     "Review Score": f"{row['avg_review_score']:.1f}/5",
@@ -229,13 +233,16 @@ class ClusteringAnalysis:
         
         return {
             'cluster_profiles': cluster_profiles,
-            'cluster_means': profile,
+            'cluster_means': profile_original,
             'cluster_sizes': pd.Series(labels).value_counts().to_dict()
         }
-
+    
     def plot_cluster_analysis_business(self, analysis_results: Dict) -> go.Figure:
-        """Plot business-friendly cluster profiles."""
+        """Plot business-friendly cluster profiles with consistent colors per cluster."""
         profiles = analysis_results['cluster_profiles']
+        
+        # Define a consistent color palette for clusters
+        colors = px.colors.qualitative.Set3[:len(profiles)]  # or any other color palette
         
         # Create subplot figure with specific types
         fig = make_subplots(
@@ -257,16 +264,28 @@ class ClusteringAnalysis:
         labels = [f"{k}: {p['Type']}" for k, p in profiles.items()]
         
         fig.add_trace(
-            go.Pie(labels=labels, values=sizes, name='Segment Sizes'),
+            go.Pie(
+                labels=labels, 
+                values=sizes, 
+                name='Segment Sizes',
+                marker=dict(colors=colors)
+            ),
             row=1, col=1
         )
+        
+        cluster_keys = list(profiles.keys())
         
         # Plot average order values (bar chart)
         order_values = [float(p['Key Metrics']['Avg Order Value'].replace('$','')) 
                     for p in profiles.values()]
         
         fig.add_trace(
-            go.Bar(x=list(profiles.keys()), y=order_values, name='Avg Order Value'),
+            go.Bar(
+                x=cluster_keys, 
+                y=order_values, 
+                name='Avg Order Value',
+                marker_color=colors
+            ),
             row=1, col=2
         )
         
@@ -275,7 +294,12 @@ class ClusteringAnalysis:
                     for p in profiles.values()]
         
         fig.add_trace(
-            go.Bar(x=list(profiles.keys()), y=satisfaction, name='Satisfaction'),
+            go.Bar(
+                x=cluster_keys, 
+                y=satisfaction, 
+                name='Satisfaction',
+                marker_color=colors
+            ),
             row=2, col=1
         )
         
@@ -284,14 +308,22 @@ class ClusteringAnalysis:
                 for p in profiles.values()]
         
         fig.add_trace(
-            go.Bar(x=list(profiles.keys()), y=recency, name='Days Since Purchase'),
+            go.Bar(
+                x=cluster_keys, 
+                y=recency, 
+                name='Days Since Purchase',
+                marker_color=colors
+            ),
             row=2, col=2
         )
         
         fig.update_layout(
             height=800,
             title_text="Customer Segment Analysis",
-            showlegend=True
+            showlegend=True,
+            # Ensure consistent appearance
+            bargap=0.3,
+            bargroupgap=0.1
         )
         
         return fig
