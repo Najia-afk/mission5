@@ -237,9 +237,13 @@ class ClusteringAnalysis:
         """Plot business-friendly cluster profiles."""
         profiles = analysis_results['cluster_profiles']
         
-        # Create subplot figure
+        # Create subplot figure with specific types
         fig = make_subplots(
             rows=2, cols=2,
+            specs=[
+                [{"type": "domain"}, {"type": "xy"}],  # First row
+                [{"type": "xy"}, {"type": "xy"}]       # Second row
+            ],
             subplot_titles=(
                 'Customer Segments Distribution',
                 'Average Order Value by Segment',
@@ -248,7 +252,7 @@ class ClusteringAnalysis:
             )
         )
         
-        # Plot cluster sizes
+        # Plot cluster sizes (pie chart)
         sizes = [p['Size'] for p in profiles.values()]
         labels = [f"{k}: {p['Type']}" for k, p in profiles.items()]
         
@@ -257,7 +261,7 @@ class ClusteringAnalysis:
             row=1, col=1
         )
         
-        # Plot average order values
+        # Plot average order values (bar chart)
         order_values = [float(p['Key Metrics']['Avg Order Value'].replace('$','')) 
                     for p in profiles.values()]
         
@@ -266,7 +270,7 @@ class ClusteringAnalysis:
             row=1, col=2
         )
         
-        # Plot satisfaction scores
+        # Plot satisfaction scores (bar chart)
         satisfaction = [float(p['Key Metrics']['Review Score'].split('/')[0]) 
                     for p in profiles.values()]
         
@@ -275,7 +279,7 @@ class ClusteringAnalysis:
             row=2, col=1
         )
         
-        # Plot recency
+        # Plot recency (bar chart)
         recency = [float(p['Key Metrics']['Days Since Last Purchase']) 
                 for p in profiles.values()]
         
@@ -287,7 +291,7 @@ class ClusteringAnalysis:
         fig.update_layout(
             height=800,
             title_text="Customer Segment Analysis",
-            showlegend=False
+            showlegend=True
         )
         
         return fig
