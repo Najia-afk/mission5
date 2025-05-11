@@ -41,7 +41,7 @@ class ClusteringAnalysis:
                 score = silhouette_score(
                     self.X, 
                     kmeans.labels_,
-                    sample_size=min(10000, len(self.X))
+                    sample_size=min(20000, len(self.X))
                 )
                 silhouette_scores.append(score)
             

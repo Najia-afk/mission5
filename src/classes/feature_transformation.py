@@ -15,12 +15,12 @@ class FeatureTransformation:
         if not self._is_initialized:
             # Initialize scalers with appropriate ranges
             self.rfm_scalers = {
-                'recency': MinMaxScaler(feature_range=(0, 10)),  # Lower is better
+                'recency': MinMaxScaler(feature_range=(0, 1)),  # Lower is better
                 'frequency': MinMaxScaler(feature_range=(0, 1)),  # Simple weight
                 'monetary': MinMaxScaler(feature_range=(0, 1))   # Simple weight
             }
             self.review_scalers = {
-                'avg_review_score': MinMaxScaler(feature_range=(0, 5)),  # higher is better
+                'avg_review_score': MinMaxScaler(feature_range=(0, 1)),  # higher is better
                 'review_count': MinMaxScaler(feature_range=(0, 1))  # Simple weight
             }
             self.time_scaler = RobustScaler()    # Keep robust for time
