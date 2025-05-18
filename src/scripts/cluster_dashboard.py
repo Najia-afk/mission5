@@ -462,21 +462,24 @@ class ClusterDashboard:
             labels=labels,
             values=values,
             marker=dict(colors=colors),
-            textinfo='percent+label',
+            textinfo='percent',
+            textposition='outside',
             hoverinfo='label+value',
-            hole=0.3
+            hole=0.3,
+            pull=[0.05] * len(values)  # Slightly pull all slices for better spacing
         )])
         
         fig.update_layout(
             title="Customer Segment Distribution",
             legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01
+                yanchor="middle",
+                y=0.5,
+                xanchor="right",
+                x=1.1
             ),
             height=600,
-            margin=dict(l=20, r=20, t=40, b=20)
+            margin=dict(l=20, r=150, t=40, b=20),  # Increased right margin for legend
+            showlegend=True
         )
         
         return fig
@@ -570,33 +573,89 @@ class ClusterDashboard:
         # Create figure
         fig = go.Figure()
         
+        # Get feature in original scale name for better labels
+        feature_name = feature.replace('_', ' ').title()
+        if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
+            feature_name = self.transformer.get_feature_names().get(feature, feature_name)
+        
+        # Create a nice hover template with formatting
+        hover_template = f"<b>{feature_name}</b>: %{{y}}<br>Cluster: %{{customdata[0]}}<br>Size: %{{customdata[1]}} customers<extra></extra>"
+        
+        # Handle special formatting for known feature types
+        if 'monetary' in feature.lower():
+            hover_template = f"<b>{feature_name}</b>: $%{{y:.2f}}<br>Cluster: %{{customdata[0]}}<br>Size: %{{customdata[1]}} customers<extra></extra>"
+        elif 'days' in feature.lower():
+            hover_template = f"<b>{feature_name}</b>: %{{y:.0f}} days<br>Cluster: %{{customdata[0]}}<br>Size: %{{customdata[1]}} customers<extra></extra>"
+        elif 'score' in feature.lower():
+            hover_template = f"<b>{feature_name}</b>: %{{y:.1f}}/5.0<br>Cluster: %{{customdata[0]}}<br>Size: %{{customdata[1]}} customers<extra></extra>"
+    
         # Add trace for each cluster
         for cluster_id in sorted(self.clustered_data['cluster'].unique()):
             cluster_data = self.clustered_data[self.clustered_data['cluster'] == cluster_id]
             
             cluster_name = self.cluster_profiles[cluster_id]['name']
+            size = self.cluster_profiles[cluster_id]['size']
             color = self.cluster_colors[cluster_id % len(self.cluster_colors)]
+            
+            # Create custom data for hover template
+            custom_data = [[cluster_name, size]] * len(cluster_data)
             
             fig.add_trace(go.Box(
                 y=cluster_data[feature],
                 name=f"Cluster {cluster_id}",
                 marker_color=color,
+                marker=dict(
+                    opacity=0.8,
+                    line=dict(width=1, color='rgb(50, 50, 50)')
+                ),
                 boxmean=True,  # Shows the mean as a dashed line
-                hovertext=[f"{cluster_name}"] * len(cluster_data),
-                hoverinfo='y+text'
+                customdata=custom_data,
+                hovertemplate=hover_template,
+                whiskerwidth=0.7,
+                notched=False,
+                line=dict(width=2)
             ))
         
-        # Get feature in original scale name for better labels
-        feature_name = feature
-        if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
-            feature_name = self.transformer.get_feature_names().get(feature, feature)
-        
         fig.update_layout(
-            title=f"Distribution of {feature_name} Across Clusters",
-            yaxis_title=feature_name,
-            xaxis_title="Cluster",
+            title={
+                'text': f"Distribution of {feature_name} Across Clusters",
+                'y': 0.95,
+                'x': 0.5,
+                'xanchor': 'center',
+                'yanchor': 'top',
+                'font': dict(size=20)
+            },
+            yaxis=dict(
+                title=dict(
+                    text=feature_name,
+                    font=dict(size=16)
+                ),
+                gridcolor='rgba(220, 220, 220, 0.5)',
+                showgrid=True
+            ),
+            xaxis=dict(
+                title=dict(
+                    text="Customer Segments",
+                    font=dict(size=16)
+                ),
+                showgrid=False,
+                showline=True,
+                linecolor='rgb(200, 200, 200)'
+            ),
             boxmode='group',
-            height=500
+            template='plotly_white',
+            height=600,
+            width=900,
+            margin=dict(l=60, r=40, t=80, b=60),
+            plot_bgcolor='rgba(250, 250, 250, 0.9)',
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
+            )
         )
         
         return fig
@@ -625,6 +684,14 @@ class ClusterDashboard:
         # Filter to ensure all features exist in the data
         features = [f for f in features if f in self.data.columns]
         
+        # Remove flag variants and keep just one representation
+        flag_variants = [f for f in features if f.startswith('has_negative_flag')]
+        if len(flag_variants) > 1:
+            # Remove all flag variants from the list
+            features = [f for f in features if not f.startswith('has_negative_flag')]
+            # Add back just the main flag feature
+            features.append('has_negative_flag_1.0')  # Keep only the positive flag
+            
         if not features:
             raise ValueError("No valid features provided for visualization")
             
@@ -634,60 +701,119 @@ class ClusterDashboard:
         # Create figure with the first feature visible
         fig = go.Figure()
         
-        # Add traces for each cluster for the first feature (visible)
-        first_feature = features[0]
-        for cluster_id in unique_clusters:
-            cluster_data = self.clustered_data[self.clustered_data['cluster'] == cluster_id]
-            cluster_name = self.cluster_profiles[cluster_id]['name']
-            color = self.cluster_colors[cluster_id % len(self.cluster_colors)]
-            
-            fig.add_trace(go.Box(
-                y=cluster_data[first_feature],
-                name=f"Cluster {cluster_id}: {cluster_name}",
-                marker_color=color,
-                boxmean=True,  # Shows the mean as a dashed line
-                hovertemplate=f"{cluster_name}<br>{first_feature}: " + "%{y}<extra></extra>",
-                visible=True
-            ))
+        # Check if we should use the original data directly
+        has_original_data = self.transformer is not None and hasattr(self.transformer, 'original_df')
         
-        # Add traces for remaining features (hidden initially)
-        for feature in features[1:]:
+        # Process each feature
+        for i, feature in enumerate(features):
+            # Determine if this is the first feature (for visibility)
+            is_first_feature = (i == 0)
+            
+            # Check if this is a categorical feature (special handling needed)
+            is_categorical = feature.startswith('has_negative_flag')
+            
+            # Get formatted feature name for display
+            feature_name = feature.replace('_', ' ').title()
+            if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
+                feature_name = self.transformer.get_feature_names().get(feature, feature_name)
+            
+            # Simplify flag display names
+            if is_categorical:
+                feature_name = "Has Negative Reviews"
+            
+            # For each cluster, add a trace for this feature
             for cluster_id in unique_clusters:
                 cluster_data = self.clustered_data[self.clustered_data['cluster'] == cluster_id]
                 cluster_name = self.cluster_profiles[cluster_id]['name']
                 color = self.cluster_colors[cluster_id % len(self.cluster_colors)]
                 
+                # Default y_values and hover format
+                hover_format = "%{y}"
+                
+                # Simplified categorical handling - just use values directly
+                if is_categorical:
+                    y_values = cluster_data[feature]
+                    hover_format = "1: Has Negative Reviews"
+                
+                # For regular features - use original data directly if available
+                elif has_original_data and feature in self.transformer.original_df.columns:
+                    try:
+                        # Get indices for this cluster
+                        if self.has_customer_ids:
+                            # When using customer IDs as index, use the index values
+                            indices = cluster_data.index
+                            y_values = self.transformer.original_df.loc[indices, feature]
+                        else:
+                            # When using RangeIndex, need to rely on matching the positions
+                            orig_indices = [self.data.index.get_loc(idx) for idx in cluster_data.index]
+                            y_values = self.transformer.original_df.iloc[orig_indices][feature]
+                            
+                        # Set appropriate formatting for specific feature types
+                        if feature == 'monetary':
+                            hover_format = "$%{y:.2f}"
+                        elif 'days' in feature.lower():
+                            hover_format = "%{y:.0f} days"
+                        elif 'score' in feature.lower():
+                            hover_format = "%{y:.1f}/5.0"
+                    except Exception as e:
+                        # Fallback to transformed data if there's an error
+                        print(f"Warning: Could not get original values for {feature}: {str(e)}")
+                        y_values = cluster_data[feature]
+                else:
+                    # Use transformed data if original is not available
+                    y_values = cluster_data[feature]
+                
+                # Create the trace
                 fig.add_trace(go.Box(
-                    y=cluster_data[feature],
+                    y=y_values,
                     name=f"Cluster {cluster_id}: {cluster_name}",
                     marker_color=color,
-                    boxmean=True,
-                    hovertemplate=f"{cluster_name}<br>{feature}: " + "%{y}<extra></extra>",
-                    visible=False
+                    boxmean=True,  # Shows the mean as a dashed line
+                    hovertemplate=f"{cluster_name}<br>{feature_name}: {hover_format}<extra></extra>",
+                    visible=is_first_feature
                 ))
                 
         # Create dropdown menu buttons for feature selection
         buttons = []
         for i, feature in enumerate(features):
-            # Get feature name in original scale if available
-            feature_name = feature
+            # Get feature name for display
+            feature_name = feature.replace('_', ' ').title()
             if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
-                feature_name = self.transformer.get_feature_names().get(feature, feature)
-                
+                feature_name = self.transformer.get_feature_names().get(feature, feature_name)
+            
+            # Simplify flag category names
+            if feature.startswith('has_negative_flag'):
+                feature_name = "Has Negative Reviews"
+            
             # Set visibility for this feature (show only traces for this feature)
             visibility = [False] * len(fig.data)
             for j in range(len(unique_clusters)):
                 visibility[i * len(unique_clusters) + j] = True
                 
+            # Create layout updates for y-axis formatting based on feature type
+            layout_updates = {
+                'title': f'Distribution of {feature_name} Across Clusters',
+                'yaxis': {'title': feature_name}
+            }
+            
+            # Special y-axis settings for flags (binary values)
+            if feature.startswith('has_negative_flag'):
+                layout_updates['yaxis']['range'] = [-0.1, 1.1]
+                layout_updates['yaxis']['dtick'] = 1
+            
+            # Add Y-axis formatting for specific features
+            if has_original_data:
+                if feature == 'monetary':
+                    layout_updates['yaxis']['tickprefix'] = '$'
+                elif 'score' in feature.lower():
+                    layout_updates['yaxis']['range'] = [0, 5.5]
+            
             buttons.append(dict(
-                label=feature_name.replace('_', ' ').title(),
+                label=feature_name,
                 method='update',
                 args=[
                     {'visible': visibility},
-                    {
-                        'title': f'Distribution of {feature_name} Across Clusters',
-                        'yaxis': {'title': feature_name}
-                    }
+                    layout_updates
                 ]
             ))
             
@@ -701,18 +827,35 @@ class ClusterDashboard:
             dict(
                 label="Violin Plot",
                 method="restyle",
-                args=["type", "violin"]
+                args=[{"type": "violin", "box": True, "meanline": True, "points": False}]
             )
         ]
         
-        # Get the first feature name in original scale if available
-        first_feature_name = first_feature
+        # Get the first feature name for initial display
+        first_feature_name = features[0].replace('_', ' ').title()
         if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
-            first_feature_name = self.transformer.get_feature_names().get(first_feature, first_feature)
+            first_feature_name = self.transformer.get_feature_names().get(features[0], first_feature_name)
+        
+        # Special display for categorical features - simplified
+        if features[0].startswith('has_negative_flag'):
+            first_feature_name = "Has Negative Reviews"
+        
+        # Initial layout settings
+        initial_yaxis = {'title': first_feature_name}
+        if features[0].startswith('has_negative_flag'):
+            initial_yaxis['range'] = [-0.1, 1.1]
+            initial_yaxis['dtick'] = 1
+            
+        # Add specific formatting for initial view
+        if has_original_data:
+            if features[0] == 'monetary':
+                initial_yaxis['tickprefix'] = '$'
+            elif 'score' in features[0].lower():
+                initial_yaxis['range'] = [0, 5.5]
             
         fig.update_layout(
             title=f'Distribution of {first_feature_name} Across Clusters',
-            yaxis_title=first_feature_name,
+            yaxis=initial_yaxis,
             xaxis_title='Cluster',
             updatemenus=[
                 # Feature selection dropdown
@@ -766,7 +909,7 @@ class ClusterDashboard:
         )
         
         return fig
-        
+    
     def create_cluster_metrics_table(self) -> go.Figure:
         """
         Create a table with key metrics for all clusters.
@@ -832,7 +975,7 @@ class ClusterDashboard:
         
         fig.update_layout(
             title="Customer Segment Metrics",
-            height=len(table_data) * 40 + 100,  # Adjust height based on number of rows
+            height=len(table_data) * 40 + 200,  # Adjust height based on number of rows
             margin=dict(l=20, r=20, t=40, b=20)
         )
         
@@ -959,7 +1102,7 @@ class ClusterDashboard:
         
         fig.update_layout(
             title="Recommended Actions by Customer Segment",
-            height=len(table_data) * 60 + 100,  # Adjust height for multiline text
+            height=len(table_data) * 60 + 200,  # Adjust height for multiline text
             margin=dict(l=20, r=20, t=40, b=20)
         )
         
