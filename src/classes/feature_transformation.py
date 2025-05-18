@@ -6,13 +6,20 @@ import pandas as pd
 import numpy as np
 
 class GenericFeatureTransformer:
-    def __init__(self):
-        self.column_types = None
-        self.transformer = None
-        self.categorical_encoders = {}
-        self.timestamp_transformer = None
-        self.original_columns = None
+    """
+    Generic feature transformer for clustering analysis.
+    Provides different transformation strategies for different feature types.
+    """
     
+    def __init__(self):
+        """Initialize transformer state dictionaries."""
+        self.feature_means = {}
+        self.feature_stds = {}
+        self.categorical_mappings = {}
+        self.feature_names = {}
+        self.original_df = None  # Store original dataframe for reference
+        self.feature_types = {}  # Track which features are of which type
+        
     def fit_transform(self, df, categorical_cols=None, count_cols=None, timestamp_col=None):
         """
         Generic transformation pipeline that handles all column types.

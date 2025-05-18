@@ -601,6 +601,172 @@ class ClusterDashboard:
         
         return fig
     
+    def create_enhanced_feature_distribution_plot(self, 
+                                                features: Optional[List[str]] = None) -> go.Figure:
+        """
+        Create an interactive boxplot showing distributions of multiple features across clusters.
+        
+        Parameters:
+        -----------
+        features : List[str], optional
+            Features to include in the visualization (defaults to all numeric features)
+            
+        Returns:
+        --------
+        plotly.graph_objects.Figure
+            Interactive box/violin plot with feature selection dropdown
+        """
+        # If features not specified, use all numeric features
+        if features is None:
+            features = self.numeric_features
+        elif not isinstance(features, list):
+            features = [features]  # Convert single feature to list
+            
+        # Filter to ensure all features exist in the data
+        features = [f for f in features if f in self.data.columns]
+        
+        if not features:
+            raise ValueError("No valid features provided for visualization")
+            
+        # Get cluster information
+        unique_clusters = sorted(self.clustered_data['cluster'].unique())
+        
+        # Create figure with the first feature visible
+        fig = go.Figure()
+        
+        # Add traces for each cluster for the first feature (visible)
+        first_feature = features[0]
+        for cluster_id in unique_clusters:
+            cluster_data = self.clustered_data[self.clustered_data['cluster'] == cluster_id]
+            cluster_name = self.cluster_profiles[cluster_id]['name']
+            color = self.cluster_colors[cluster_id % len(self.cluster_colors)]
+            
+            fig.add_trace(go.Box(
+                y=cluster_data[first_feature],
+                name=f"Cluster {cluster_id}: {cluster_name}",
+                marker_color=color,
+                boxmean=True,  # Shows the mean as a dashed line
+                hovertemplate=f"{cluster_name}<br>{first_feature}: " + "%{y}<extra></extra>",
+                visible=True
+            ))
+        
+        # Add traces for remaining features (hidden initially)
+        for feature in features[1:]:
+            for cluster_id in unique_clusters:
+                cluster_data = self.clustered_data[self.clustered_data['cluster'] == cluster_id]
+                cluster_name = self.cluster_profiles[cluster_id]['name']
+                color = self.cluster_colors[cluster_id % len(self.cluster_colors)]
+                
+                fig.add_trace(go.Box(
+                    y=cluster_data[feature],
+                    name=f"Cluster {cluster_id}: {cluster_name}",
+                    marker_color=color,
+                    boxmean=True,
+                    hovertemplate=f"{cluster_name}<br>{feature}: " + "%{y}<extra></extra>",
+                    visible=False
+                ))
+                
+        # Create dropdown menu buttons for feature selection
+        buttons = []
+        for i, feature in enumerate(features):
+            # Get feature name in original scale if available
+            feature_name = feature
+            if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
+                feature_name = self.transformer.get_feature_names().get(feature, feature)
+                
+            # Set visibility for this feature (show only traces for this feature)
+            visibility = [False] * len(fig.data)
+            for j in range(len(unique_clusters)):
+                visibility[i * len(unique_clusters) + j] = True
+                
+            buttons.append(dict(
+                label=feature_name.replace('_', ' ').title(),
+                method='update',
+                args=[
+                    {'visible': visibility},
+                    {
+                        'title': f'Distribution of {feature_name} Across Clusters',
+                        'yaxis': {'title': feature_name}
+                    }
+                ]
+            ))
+            
+        # Create button to toggle between box plot and violin plot
+        plot_type_buttons = [
+            dict(
+                label="Box Plot",
+                method="restyle",
+                args=["type", "box"]
+            ),
+            dict(
+                label="Violin Plot",
+                method="restyle",
+                args=["type", "violin"]
+            )
+        ]
+        
+        # Get the first feature name in original scale if available
+        first_feature_name = first_feature
+        if self.transformer is not None and hasattr(self.transformer, 'get_feature_names'):
+            first_feature_name = self.transformer.get_feature_names().get(first_feature, first_feature)
+            
+        fig.update_layout(
+            title=f'Distribution of {first_feature_name} Across Clusters',
+            yaxis_title=first_feature_name,
+            xaxis_title='Cluster',
+            updatemenus=[
+                # Feature selection dropdown
+                {
+                    'buttons': buttons,
+                    'direction': 'down',
+                    'showactive': True,
+                    'x': 0.7,
+                    'y': 1.1,
+                    'xanchor': 'center',
+                    'yanchor': 'middle'
+                },
+                # Plot type selection (box/violin)
+                {
+                    'buttons': plot_type_buttons,
+                    'direction': 'right',
+                    'showactive': True,
+                    'x': 0.45,
+                    'y': 1.1,
+                    'xanchor': 'center',
+                    'yanchor': 'middle'
+                }
+            ],
+            height=600,
+            margin=dict(t=80, b=40, l=40, r=40),
+            boxmode='group',
+            annotations=[
+                dict(
+                    text="Feature:",
+                    showarrow=False,
+                    x=0.7,
+                    y=1.1,
+                    xref="paper",
+                    yref="paper",
+                    xanchor="right",
+                    yanchor="middle",
+                    font=dict(size=12)
+                ),
+                dict(
+                    text="Plot Type:",
+                    showarrow=False,
+                    x=0.45,
+                    y=1.1,
+                    xref="paper",
+                    yref="paper",
+                    xanchor="right",
+                    yanchor="middle",
+                    font=dict(size=12)
+                )
+            ]
+        )
+        
+        return fig
+        
     def create_cluster_metrics_table(self) -> go.Figure:
         """
         Create a table with key metrics for all clusters.
@@ -850,21 +1016,17 @@ class ClusterDashboard:
                                   x=0.5, y=0.5, showarrow=False)
                 dashboard['action_table'] = fig
             
-            # Add feature distributions for top features by variance
+            # Add enhanced interactive feature distribution plot instead of individual plots
             try:
                 if self.numeric_features:
-                    # Get top features by variance
+                    # Get top features by variance for the enhanced visualization
                     feature_vars = self.data[self.numeric_features].var().sort_values(ascending=False)
-                    key_features = feature_vars.index[:min(3, len(feature_vars))].tolist()
+                    key_features = feature_vars.index[:min(6, len(feature_vars))].tolist()
                     
-                    # Create distribution plots
-                    for feature in key_features:
-                        try:
-                            dashboard[f"feature_distribution_{feature}"] = self.create_feature_distribution_plot(feature)
-                        except Exception as e:
-                            print(f"Warning: Could not create distribution for {feature}: {str(e)}")
+                    # Create enhanced interactive feature distribution
+                    dashboard['feature_distributions'] = self.create_enhanced_feature_distribution_plot(key_features)
             except Exception as e:
-                print(f"Warning: Could not create feature distribution plots: {str(e)}")
+                print(f"Warning: Could not create enhanced feature distribution: {str(e)}")
     
         except Exception as e:
             print(f"Error creating dashboard component: {str(e)}")
