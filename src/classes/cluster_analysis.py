@@ -788,7 +788,7 @@ class ClusteringAnalysis:
                     text=[f"{dist:.2f}"],
                     textposition='middle center',
                     textfont=dict(
-                        color=line_color,  # Match the line color
+                        color=line_color,  # Match the line color instead of using black
                         size=10,
                         family='Arial'
                     ),
