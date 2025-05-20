@@ -473,9 +473,9 @@ class ClusterDashboard:
             title="Customer Segment Distribution",
             legend=dict(
                 yanchor="middle",
-                y=0.5,
+                y=0.8,
                 xanchor="right",
-                x=1.1
+                x=1.3
             ),
             height=600,
             margin=dict(l=20, r=150, t=40, b=20),  # Increased right margin for legend
@@ -863,7 +863,7 @@ class ClusterDashboard:
                     'buttons': buttons,
                     'direction': 'down',
                     'showactive': True,
-                    'x': 0.7,
+                    'x': 0.90,
                     'y': 1.1,
                     'xanchor': 'center',
                     'yanchor': 'middle'
@@ -873,7 +873,7 @@ class ClusterDashboard:
                     'buttons': plot_type_buttons,
                     'direction': 'right',
                     'showactive': True,
-                    'x': 0.45,
+                    'x': 0.7,
                     'y': 1.1,
                     'xanchor': 'center',
                     'yanchor': 'middle'
@@ -881,31 +881,7 @@ class ClusterDashboard:
             ],
             height=600,
             margin=dict(t=80, b=40, l=40, r=40),
-            boxmode='group',
-            annotations=[
-                dict(
-                    text="Feature:",
-                    showarrow=False,
-                    x=0.7,
-                    y=1.1,
-                    xref="paper",
-                    yref="paper",
-                    xanchor="right",
-                    yanchor="middle",
-                    font=dict(size=12)
-                ),
-                dict(
-                    text="Plot Type:",
-                    showarrow=False,
-                    x=0.45,
-                    y=1.1,
-                    xref="paper",
-                    yref="paper",
-                    xanchor="right",
-                    yanchor="middle",
-                    font=dict(size=12)
-                )
-            ]
+            boxmode='group'
         )
         
         return fig
@@ -975,7 +951,7 @@ class ClusterDashboard:
         
         fig.update_layout(
             title="Customer Segment Metrics",
-            height=len(table_data) * 40 + 200,  # Adjust height based on number of rows
+            height=len(table_data) * 40 + 350,  # Adjust height based on number of rows
             margin=dict(l=20, r=20, t=40, b=20)
         )
         
