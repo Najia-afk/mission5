@@ -577,3 +577,341 @@ class ClusterStabilityAnalysis:
             'eval_sample_size': sample_size,
             'largest_period': largest_period
         }
+    
+    def evaluate_temporal_drift(self, n_clusters=4, period='month', threshold=0.7, reference_period=None, eval_sample_size=1000, random_state=42, include_cumulative=True):
+        """
+        Evaluate how cluster stability drifts over time from a specified reference period.
+        When reference_period is specified, all data from t0 up to the reference_period is 
+        used as the baseline for comparison with subsequent periods.
+        
+        Parameters:
+        -----------
+        n_clusters : int
+            Number of clusters to create
+        period : str
+            Time period to use ('month', 'quarter', 'year')
+        threshold : float
+            ARI threshold below which model retraining is recommended (0-1)
+        reference_period : str, optional
+            Specific period to use as reference (e.g., '2017Q3'). If None, use earliest period.
+            When specified, all data from t0 up to this period is used as reference.
+        eval_sample_size : int
+            Size of evaluation sample to use across all periods
+        random_state : int
+            Random seed for reproducibility
+        include_cumulative : bool
+            Whether to include analysis of cumulative periods after reference
+        
+        Returns:
+        --------
+        dict
+            Dictionary containing stability metrics and visualizations
+        """
+        if self.original_df_with_dates is None:
+            raise ValueError("Original dataframe with dates must be provided for temporal drift analysis")
+        
+        # Set random seed
+        np.random.seed(random_state)
+            
+        # Ensure order_purchase_timestamp is in datetime format
+        date_col = 'order_purchase_timestamp'
+        df_dates = self.original_df_with_dates.reset_index()
+        
+        if date_col not in df_dates.columns:
+            raise ValueError(f"Column {date_col} not found in original dataframe")
+        
+        # Convert to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(df_dates[date_col]):
+            df_dates[date_col] = pd.to_datetime(df_dates[date_col])
+        
+        # Create period column
+        if period == 'month':
+            df_dates['period'] = df_dates[date_col].dt.to_period('M')
+            df_dates['period_type'] = 'month'
+        elif period == 'quarter':
+            df_dates['period'] = df_dates[date_col].dt.to_period('Q')
+            df_dates['period_type'] = 'quarter'
+        elif period == 'year':
+            df_dates['period'] = df_dates[date_col].dt.year
+            df_dates['period_type'] = 'year'
+        else:
+            raise ValueError("Period must be 'month', 'quarter', or 'year'")
+            
+        # Get period counts and sort chronologically
+        period_counts = df_dates['period'].value_counts().sort_index()
+        periods = period_counts.index
+        
+        # Ensure we have at least 2 periods
+        if len(periods) < 2:
+            return {
+                'error': 'Need at least 2 time periods for drift analysis',
+                'period_counts': period_counts
+            }
+            
+        # Create a fixed evaluation set from across all periods for consistent comparison
+        all_customers = df_dates['customer_id'].unique()
+        valid_customers = [c for c in all_customers if c in self.df.index]
+        
+        sample_size = min(eval_sample_size, len(valid_customers))
+        eval_customers = np.random.choice(valid_customers, size=sample_size, replace=False)
+        eval_features = self.df.loc[eval_customers]
+        
+        # Train a model for each period
+        period_models = {}
+        period_customer_counts = {}
+        
+        for p in tqdm(periods, desc=f"Training models by {period}"):
+            # Get customers for this period
+            period_customers = df_dates[df_dates['period'] == p]['customer_id'].unique()
+            period_customer_counts[p] = len(period_customers)
+            
+            # Check if we have enough customers for this period
+            if len(period_customers) < n_clusters * 5:
+                print(f"Skipping period {p} - insufficient customers ({len(period_customers)})")
+                continue
+                
+            # Get customers that exist in transformed data
+            valid_period_customers = [c for c in period_customers if c in self.df.index]
+            if len(valid_period_customers) < n_clusters * 5:
+                print(f"Skipping period {p} - insufficient customers with features ({len(valid_period_customers)})")
+                continue
+                
+            # Get transformed data for these customers
+            period_data = self.df.loc[valid_period_customers]
+            
+            # Train clustering model
+            kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+            kmeans.fit(period_data)
+            
+            # Store model
+            period_models[p] = kmeans
+        
+        # Get predictions from each period's model on the evaluation set
+        period_predictions = {}
+        for p, model in period_models.items():
+            period_predictions[p] = model.predict(eval_features)
+            
+        # Determine reference period and data
+        valid_periods = sorted(period_models.keys())
+        if len(valid_periods) < 2:
+            return {
+                'error': 'Insufficient periods with valid models',
+                'period_customer_counts': period_customer_counts
+            }
+        
+        # If no reference period is specified, use the earliest period
+        if reference_period is None:
+            reference_period_obj = valid_periods[0]
+            reference_periods = [reference_period_obj]
+            comparison_periods = valid_periods[1:]
+        else:
+            # Find the matching period object using string representation
+            period_match = False
+            for p in valid_periods:
+                if str(p) == reference_period:
+                    reference_period_obj = p
+                    period_match = True
+                    break
+                    
+            if not period_match:
+                valid_period_strs = [str(p) for p in valid_periods]
+                raise ValueError(f"Specified reference period '{reference_period}' not found in valid periods: {valid_period_strs}")
+            
+            # Get all periods up to and including the reference period
+            reference_periods = [p for p in valid_periods if p <= reference_period_obj]
+            # Get all periods after the reference period
+            comparison_periods = [p for p in valid_periods if p > reference_period_obj]
+            
+            if not comparison_periods:
+                return {
+                    'error': 'No periods available after the specified reference period',
+                    'reference_period': reference_period_obj,
+                    'reference_periods': reference_periods,
+                    'period_customer_counts': period_customer_counts
+                }
+        
+        # If we're using multiple reference periods, build a combined reference model
+        if len(reference_periods) > 1:
+            # Get all customers from reference periods
+            reference_customers = []
+            for p in reference_periods:
+                period_customers = df_dates[df_dates['period'] <= p]['customer_id'].unique()
+                reference_customers.extend(period_customers)
+            reference_customers = list(set(reference_customers))
+            
+            # Filter to valid customers in the transformed data
+            valid_reference_customers = [c for c in reference_customers if c in self.df.index]
+            
+            if len(valid_reference_customers) < n_clusters * 5:
+                return {
+                    'error': f'Insufficient customers with features in reference periods ({len(valid_reference_customers)})',
+                    'reference_period': reference_period_obj,
+                    'reference_periods': reference_periods,
+                    'period_customer_counts': period_customer_counts
+                }
+            
+            # Get transformed data for reference customers
+            reference_data = self.df.loc[valid_reference_customers]
+            
+            # Train reference model
+            reference_model = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+            reference_model.fit(reference_data)
+            
+            # Get predictions on evaluation set
+            reference_labels = reference_model.predict(eval_features)
+        else:
+            # Use the single reference period model
+            reference_labels = period_predictions[reference_period_obj]
+        
+        # Calculate drift against reference period (one-by-one)
+        drift_scores = []
+        
+        for p in comparison_periods:
+            current_labels = period_predictions[p]
+            ari = adjusted_rand_score(reference_labels, current_labels)
+            drift_scores.append(ari)
+        
+        # Calculate drift with cumulative periods (if requested)
+        cumulative_drift_scores = []
+        cumulative_labels = []
+        
+        if include_cumulative and len(comparison_periods) > 1:
+            for i in range(len(comparison_periods)):
+                # Get periods up to and including current one
+                cumulative_periods = comparison_periods[:i+1]
+                
+                # Get all customers from these periods
+                cumulative_customers = []
+                for p in cumulative_periods:
+                    period_customers = df_dates[df_dates['period'] == p]['customer_id'].unique()
+                    cumulative_customers.extend(period_customers)
+                cumulative_customers = list(set(cumulative_customers))
+                
+                # Filter to valid customers in the transformed data
+                valid_cumulative_customers = [c for c in cumulative_customers if c in self.df.index]
+                
+                if len(valid_cumulative_customers) < n_clusters * 5:
+                    print(f"Skipping cumulative periods up to {cumulative_periods[-1]} - insufficient customers")
+                    cumulative_drift_scores.append(None)
+                    cumulative_labels.append(f"Up to {cumulative_periods[-1]}")
+                    continue
+                
+                # Get transformed data for cumulative customers
+                cumulative_data = self.df.loc[valid_cumulative_customers]
+                
+                # Train cumulative model
+                cumulative_model = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+                cumulative_model.fit(cumulative_data)
+                
+                # Get predictions on evaluation set
+                cumulative_period_labels = cumulative_model.predict(eval_features)
+                
+                # Calculate ARI
+                ari = adjusted_rand_score(reference_labels, cumulative_period_labels)
+                cumulative_drift_scores.append(ari)
+                cumulative_labels.append(f"Up to {cumulative_periods[-1]}")
+        
+        # Create a single combined visualization
+        fig = go.Figure()
+        
+        # Add individual period ARI scores
+        colors = ['green' if score >= threshold else 'red' for score in drift_scores]
+        
+        fig.add_trace(go.Scatter(
+            x=[str(p) for p in comparison_periods],
+            y=drift_scores,
+            mode='lines+markers',
+            name='Individual Period ARI',
+            marker=dict(
+                size=10,
+                color=colors
+            ),
+            line=dict(color='rgba(55, 83, 109, 0.7)'),
+            text=[f"{p}: ARI={ari:.3f}" for p, ari in zip(comparison_periods, drift_scores)]
+        ))
+        
+        # Add cumulative period ARI scores (if available)
+        if include_cumulative and len(comparison_periods) > 1 and any(score is not None for score in cumulative_drift_scores):
+            # Filter out None values
+            valid_indices = [i for i, score in enumerate(cumulative_drift_scores) if score is not None]
+            valid_scores = [cumulative_drift_scores[i] for i in valid_indices]
+            valid_labels = [cumulative_labels[i] for i in valid_indices]
+            
+            # Create mapping between cumulative labels and x-axis positions
+            # This ensures cumulative points align with individual periods
+            x_positions = []
+            for label in valid_labels:
+                # Extract the period from "Up to PERIOD" format
+                period_str = label.split("Up to ")[1]
+                x_positions.append(period_str)
+            
+            colors_cumulative = ['green' if score >= threshold else 'red' for score in valid_scores]
+            
+            fig.add_trace(go.Scatter(
+                x=x_positions,
+                y=valid_scores,
+                mode='lines+markers',
+                name='Cumulative Period ARI',
+                marker=dict(
+                    size=10,
+                    color=colors_cumulative,
+                    symbol='diamond'
+                ),
+                line=dict(color='rgba(128, 0, 128, 0.7)', dash='dot'),
+                text=[f"Up to {x}: ARI={ari:.3f}" for x, ari in zip(x_positions, valid_scores)]
+            ))
+        
+        # Add threshold line
+        if comparison_periods:
+            fig.add_trace(go.Scatter(
+                x=[str(comparison_periods[0]), str(comparison_periods[-1])],
+                y=[threshold, threshold],
+                mode='lines',
+                name=f'Retraining Threshold ({threshold})',
+                line=dict(color='red', dash='dash')
+            ))
+        
+        # Identify first point below threshold for individual periods
+        below_threshold = [i for i, score in enumerate(drift_scores) if score < threshold]
+        if below_threshold:
+            first_below = below_threshold[0]
+            retraining_period = comparison_periods[first_below]
+            
+            # Add annotation for retraining recommendation
+            fig.add_annotation(
+                x=str(retraining_period),
+                y=drift_scores[first_below],
+                text="Retraining<br>Recommended",
+                showarrow=True,
+                arrowhead=1,
+                ax=0,
+                ay=-40
+            )
+        
+        # Update title to reflect multiple reference periods if needed
+        if len(reference_periods) > 1:
+            title = f'Model Stability Drift from t0 to {reference_period_obj} (Reference Baseline)'
+        else:
+            title = f'Model Stability Drift from {reference_period_obj} (Reference Period)'
+        
+        fig.update_layout(
+            title=title,
+            xaxis_title=f'{period.capitalize()} Period',
+            yaxis_title='Adjusted Rand Index vs Reference',
+            yaxis_range=[-0.05, 1.05],
+            template='plotly_white',
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        
+        return {
+            'reference_period': reference_period_obj,
+            'reference_periods': reference_periods,
+            'comparison_periods': comparison_periods,
+            'drift_scores': drift_scores,
+            'cumulative_drift_scores': cumulative_drift_scores if include_cumulative else None,
+            'cumulative_labels': cumulative_labels if include_cumulative else None,
+            'threshold': threshold,
+            'below_threshold': below_threshold if below_threshold else None,
+            'period_customer_counts': period_customer_counts,
+            'figure': fig
+        }
