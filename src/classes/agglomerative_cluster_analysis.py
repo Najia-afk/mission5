@@ -16,6 +16,9 @@ import warnings
 import hashlib
 import pickle
 import os
+from tqdm.notebook import tqdm
+
+warnings.filterwarnings('ignore')
 
 class AgglomerativeClusterAnalysis:
     def __init__(self, df: pd.DataFrame, features: List[str] = None, transformer = None, pca_components: np.ndarray = None):
@@ -485,7 +488,7 @@ class AgglomerativeClusterAnalysis:
         results = []
         
         # Run clustering with each linkage method
-        for method in linkage_methods:
+        for method in tqdm(linkage_methods, desc="Comparing linkage methods"):
             # Note: Ward linkage only works with euclidean distance
             if method == 'ward':
                 model = AgglomerativeClustering(

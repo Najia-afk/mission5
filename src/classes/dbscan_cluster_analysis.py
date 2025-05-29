@@ -9,7 +9,7 @@ import plotly.express as px
 from typing import Dict, List, Tuple, Optional
 import numpy as np
 from kneed import KneeLocator
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from sklearn.inspection import permutation_importance
 
 class DBSCANClusterAnalysis:
@@ -122,6 +122,7 @@ class DBSCANClusterAnalysis:
             X_sample = X
         
         # Calculate distances to k-nearest neighbors
+        print("Calculating k-nearest neighbors distances...")
         nbrs = NearestNeighbors(n_neighbors=n_neighbors).fit(X_sample)
         distances, indices = nbrs.kneighbors(X_sample)
         

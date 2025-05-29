@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
 from typing import Dict, List, Tuple, Optional
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from sklearn.inspection import permutation_importance
 import os
 
