@@ -323,7 +323,11 @@ class ClusterStabilityAnalysis:
         if period_customer_counts:
             periods_str = [str(p) for p in period_customer_counts.keys()]
             counts = list(period_customer_counts.values())
-            
+
+            sorted_items = sorted(period_customer_counts.items())
+            periods_str = [str(p) for p, _ in sorted_items]
+            counts = [c for _, c in sorted_items]
+                    
             fig_counts.add_trace(go.Bar(
                 x=periods_str,
                 y=counts,

@@ -254,9 +254,9 @@ class ClusterDashboard:
             else:
                 name_parts.append("Unsatisfied")
         
-        # Combine parts (limit to 3 parts for brevity)
-        if len(name_parts) > 3:
-            name_parts = name_parts[:3]
+        # Combine parts (limit to 4 parts for brevity)
+        if len(name_parts) > 4:
+            name_parts = name_parts[:4]
             
         if not name_parts:
             return f"Cluster {cluster_id}"
@@ -408,12 +408,12 @@ class ClusterDashboard:
         satisfaction_thresholds = self.segment_config['satisfaction']
         
         # Generate insights based on comparison with global average
-        if has_recency:
-            recency = mean_stats['recency_days']
-            if recency < recency_thresholds['active']:
-                insights.append("Recently active customers - ideal for upselling opportunities.")
-            elif recency > recency_thresholds['recent']:
-                insights.append("Inactive customers - consider reactivation campaigns.")
+        if has_satisfaction:
+            score = mean_stats['avg_review_score']
+            if score < satisfaction_thresholds['neutral']:
+                insights.append("Below average satisfaction - investigate service/product issues.")
+            elif score >= satisfaction_thresholds['very_satisfied']:
+                insights.append("Highly satisfied customers - potential brand advocates.")
                 
         if has_frequency and has_monetary:
             freq = mean_stats['frequency']
@@ -427,13 +427,13 @@ class ClusterDashboard:
                 insights.append("Big spenders but infrequent - opportunity to increase purchase frequency.")
             elif freq > global_freq and monetary < global_monetary:
                 insights.append("Frequent small purchases - potential for basket size expansion.")
-                
-        if has_satisfaction:
-            score = mean_stats['avg_review_score']
-            if score < satisfaction_thresholds['neutral']:
-                insights.append("Below average satisfaction - investigate service/product issues.")
-            elif score >= satisfaction_thresholds['very_satisfied']:
-                insights.append("Highly satisfied customers - potential brand advocates.")
+
+        if has_recency:
+            recency = mean_stats['recency_days']
+            if recency < recency_thresholds['active']:
+                insights.append("Recently active customers - ideal for upselling opportunities.")
+            elif recency > recency_thresholds['recent']:
+                insights.append("Inactive customers - consider reactivation campaigns.")
                 
         # If we don't have enough insights, add a generic one
         if len(insights) == 0:
@@ -1003,16 +1003,13 @@ class ClusterDashboard:
             if 'avg_review_score' in mean_stats:
                 score = mean_stats['avg_review_score']
                 
-                if score < 3.5:
+                if score < 4.2:
                     cluster_actions.append("Service recovery outreach")
                     cluster_actions.append("Gather feedback on improvement areas")
-                elif score > 4.5:
+                elif score > 4.2:
                     cluster_actions.append("Request referrals and testimonials")
                     cluster_actions.append("Early access to new products/features")
             
-            # Ensure we have at least 3 actions
-            if len(cluster_actions) < 3:
-                cluster_actions.append("Monitor segment performance monthly")
                 
             # Limit to top 3 actions
             actions[cluster_id] = cluster_actions[:3]
