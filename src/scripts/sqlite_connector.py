@@ -84,3 +84,65 @@ class DatabaseConnection:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._engine:
             self._engine.dispose()
+
+
+def main():
+    """Main function to run the script as a standalone tool."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='SQLite Database Connector Tool')
+    
+    # Required database path argument
+    parser.add_argument('-db_path', required=True, help='Path to the SQLite database file')
+    
+    # Optional command arguments - only one should be used at a time
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-list', action='store_true', help='List all tables in the database')
+    group.add_argument('-query', help='Execute SQL query and display results')
+    
+    # Optional CSV output path
+    parser.add_argument('-csv', help='Path to save results as CSV file')
+    
+    args = parser.parse_args()
+    
+    # Create database connection
+    db = DatabaseConnection(args.db_path)
+    
+    try:
+        if args.list:
+            # List all tables in the database
+            tables = db.get_table_names()
+            if tables:
+                print("Tables in database:")
+                for table in tables:
+                    print(f"  - {table}")
+            else:
+                print("No tables found in database.")
+        
+        elif args.query:
+            # Execute the SQL query
+            df = db.execute_query(args.query)
+            
+            # Save to CSV if requested
+            if args.csv:
+                df.to_csv(args.csv, index=False)
+                print(f"Exported {len(df)} rows to {args.csv}")
+                
+            # Always display results in the console
+            print(f"\nQuery results (showing first 10 rows):")
+            print(df.head(10).to_string())
+            print(f"\nTotal rows: {len(df)}")
+    
+    except Exception as e:
+        print(f"Error: {e}")
+    
+    finally:
+        db.__exit__(None, None, None)
+
+
+if __name__ == "__main__":
+    main()
+
+
+#usage example:
+#python .\src\scripts\sqlite_connector.py -db_path .\dataset\olist.db -query "SELECT s.seller_id, CAST(SUM(oi.price + oi.freight_value) AS INTEGER) as total_revenue FROM sellers s JOIN order_items oi ON s.seller_id = oi.seller_id JOIN orders o ON oi.order_id = o.order_id WHERE o.order_status = 'delivered' GROUP BY s.seller_id HAVING total_revenue > 100000 ORDER BY total_revenue DESC" -csv "query.csv"
