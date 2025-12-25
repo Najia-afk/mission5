@@ -5,6 +5,7 @@ seaborn
 plotly
 missingno
 scikit-learn
+sqlalchemy
 ipykernel
 jupyterlab
 nbconvert
